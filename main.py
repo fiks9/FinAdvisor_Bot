@@ -17,6 +17,7 @@ Boot sequence:
 
 import logging
 
+from telegram import BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from app.config import get_settings
@@ -56,6 +57,15 @@ async def post_init(app: Application) -> None:
 
     # ── 5. Build RAG chain ────────────────────────────────────────────────
     build_chain()
+
+    # ── 6. Setup Telegram Menu ────────────────────────────────────────────
+    # This automatically shows the command hints when the user types '/'
+    commands = [
+        BotCommand("start", "Почати роботу / Головне меню"),
+        BotCommand("help",  "Детальна довідка про бота"),
+        BotCommand("clear", "Очистити контекст поточної розмови"),
+    ]
+    await app.bot.set_my_commands(commands)
 
     logger.info("post_init complete — bot is ready to receive messages")
 
