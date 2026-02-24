@@ -8,7 +8,7 @@ IMPORTANT: python-telegram-bot v20+ manages its OWN event loop.
 Boot sequence:
   1. Setup logging                    (Step 5)  ✅
   2. Validate config / load .env      (Step 3)  ✅
-  3. Init SQLite database             (Step 8  — TODO)
+  3. Init SQLite database             (Step 8)  ✅
   4. Init ChromaDB vector store       (Step 12 — TODO)
   5. Build LangChain RAG chain        (Step 16 — TODO)
   6. Register Telegram handlers       (Step 4)  ✅
@@ -20,6 +20,7 @@ import logging
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from app.config import get_settings
+from app.db.database import init_db
 from app.logger import setup_logging
 from app.bot.handlers import (
     start_handler,
@@ -44,9 +45,7 @@ async def post_init(app: Application) -> None:
     cfg = get_settings()
 
     # ── 3. Database init ──────────────────────────────────────────────────
-    # TODO (Step 8): from app.db.database import init_db
-    #                await init_db(cfg.DB_PATH)
-    logger.info("DB init skipped (Step 8 pending)")
+    await init_db(cfg.DB_PATH)
 
     # ── 4. ChromaDB init ──────────────────────────────────────────────────
     # TODO (Step 12): from app.rag.vectorstore import init_vectorstore

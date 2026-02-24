@@ -20,6 +20,8 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+from app.db import crud
+
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -47,6 +49,9 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Handles the /start command. Greets the user."""
     user = update.effective_user
     logger.info("User %s (%s) started the bot", user.id, user.username or "no_username")
+
+    # Register / refresh user in the DB
+    await crud.upsert_user(user.id, user.username, user.first_name)
 
     await update.message.reply_text(
         WELCOME_TEXT,
@@ -97,15 +102,14 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def clear_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handles the /clear command.
-    Step 4: shows a placeholder message.
-    Step 9: will call crud.clear_history(user_id) for real.
+    Deletes the user's full conversation history from SQLite.
     """
     user = update.effective_user
-    logger.info("User %s requested /clear (DB not yet connected)", user.id)
+    logger.info("User %s requested /clear", user.id)
 
-    # TODO (Step 9): await crud.clear_history(user.id)
+    deleted = await crud.clear_history(user.id)
     await update.message.reply_text(
-        "🗑 Історію буде очищено після підключення бази даних (Крок 9).",
+        f"🗑 Історію очищено ({deleted} повідомлень). Починаємо з нуля 👍",
     )
 
 
