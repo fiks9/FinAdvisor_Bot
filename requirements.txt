@@ -1,0 +1,26 @@
+# FinAdvisor Bot — Python Dependencies
+# Versions pinned to avoid "works on my machine" surprises.
+# Run: pip install -r requirements.txt
+
+# --- Telegram ---
+python-telegram-bot==21.6
+
+# --- LLM: Groq + LangChain ---
+langchain==0.3.14
+langchain-groq==0.2.3
+langchain-community==0.3.14
+groq==0.13.1
+
+# --- Embeddings (local, no API cost) ---
+sentence-transformers==3.3.1
+
+# --- Vector DB ---
+chromadb==0.6.3
+
+# --- Database ---
+aiosqlite==0.20.0
+
+# --- Config & Validation ---
+pydantic==2.10.6
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
