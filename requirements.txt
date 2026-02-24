@@ -1,6 +1,9 @@
 # FinAdvisor Bot — Python Dependencies
 # Versions pinned to avoid "works on my machine" surprises.
 # Run: pip install -r requirements.txt
+#
+# NOTE: chromadb 0.6.x does NOT have a Windows pre-built wheel for chroma-hnswlib.
+# We pin 1.5.1+ which ships as a bundled win_amd64 wheel (no C++ Build Tools needed).
 
 # --- Telegram ---
 python-telegram-bot==21.6
@@ -14,8 +17,8 @@ groq==0.13.1
 # --- Embeddings (local, no API cost) ---
 sentence-transformers==3.3.1
 
-# --- Vector DB ---
-chromadb==0.6.3
+# --- Vector DB (1.5.1+ has pre-built Windows wheel — no C++ compiler needed) ---
+chromadb==1.5.1
 
 # --- Database ---
 aiosqlite==0.20.0
