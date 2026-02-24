@@ -16,9 +16,11 @@ groq==0.13.1
 
 # --- Embeddings (local, no API cost) ---
 sentence-transformers==3.3.1
+langchain-huggingface==0.1.2
 
 # --- Vector DB (1.5.1+ has pre-built Windows wheel — no C++ compiler needed) ---
 chromadb==1.5.1
+langchain-chroma==0.2.4
 
 # --- Database ---
 aiosqlite==0.20.0
