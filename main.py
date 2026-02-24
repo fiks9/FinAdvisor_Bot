@@ -9,8 +9,8 @@ Boot sequence:
   1. Setup logging                    (Step 5)  ✅
   2. Validate config / load .env      (Step 3)  ✅
   3. Init SQLite database             (Step 8)  ✅
-  4. Init ChromaDB vector store       (Step 12 — TODO)
-  5. Build LangChain RAG chain        (Step 16 — TODO)
+  4. Init ChromaDB vector store       (Step 12) ✅
+  5. Build LangChain RAG chain        (Step 16) ✅
   6. Register Telegram handlers       (Step 4)  ✅
   7. Start polling loop               (Step 4)  ✅
 """
@@ -21,6 +21,9 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from app.config import get_settings
 from app.db.database import init_db
+from app.rag.embeddings import get_embeddings
+from app.rag.vectorstore import init_vectorstore
+from app.llm.chain import build_chain
 from app.logger import setup_logging
 from app.bot.handlers import (
     start_handler,
@@ -48,14 +51,11 @@ async def post_init(app: Application) -> None:
     await init_db(cfg.DB_PATH)
 
     # ── 4. ChromaDB init ──────────────────────────────────────────────────
-    # TODO (Step 12): from app.rag.vectorstore import init_vectorstore
-    #                 await init_vectorstore(cfg.CHROMA_PATH)
-    logger.info("ChromaDB init skipped (Step 12 pending)")
+    embeddings = get_embeddings(cfg.EMBEDDING_MODEL)
+    init_vectorstore(cfg.CHROMA_PATH, embeddings)
 
     # ── 5. Build RAG chain ────────────────────────────────────────────────
-    # TODO (Step 16): from app.llm.chain import build_chain
-    #                 app.bot_data["chain"] = build_chain()
-    logger.info("RAG chain skipped (Step 16 pending)")
+    build_chain()
 
     logger.info("post_init complete — bot is ready to receive messages")
 

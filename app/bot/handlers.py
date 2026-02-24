@@ -3,17 +3,18 @@ app/bot/handlers.py — Telegram message & command handlers
 ==========================================================
 Registered on the Application instance in main.py.
 
-Current state (Step 4 — Echo Bot):
-  /start  → greeting message with feature overview
+Current state (Steps 4, 17, 18 — Fully integrated):
+  /start  → greeting + upsert user in DB
   /help   → list of available commands
-  /clear  → placeholder (implemented in Step 9 with real DB)
-  text    → echo back user's message (replaced by RAG chain in Step 17)
+  /clear  → clears SQLite conversation history
+  text    → RAG chain call (retrieve → history → LLM) + memory writeback
 
 IMPORTANT: Every handler is an async function.
   Never use time.sleep() — always use await asyncio.sleep() if needed.
   Blocking calls will freeze the bot for ALL users simultaneously.
 """
 
+import asyncio
 import logging
 
 from telegram import Update
@@ -21,6 +22,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from app.db import crud
+from app.llm.chain import ask
 
 logger = logging.getLogger(__name__)
 
@@ -117,28 +119,101 @@ async def clear_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 #  Text message handler — Echo (temporary)
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _split_long_message(text: str, max_length: int = 4096) -> list[str]:
+    """Splits a long text into chunks, trying to break at paragraph boundaries."""
+    chunks = []
+    current_chunk = ""
+    paragraphs = text.split('\n\n') # Split by double newline for paragraphs
+
+    for paragraph in paragraphs:
+        # If adding the next paragraph (plus separator) exceeds max_length
+        # and current_chunk is not empty, then save current_chunk and start new one.
+        # Add 2 for the '\n\n' separator if it's not the first paragraph
+        if current_chunk and len(current_chunk) + len(paragraph) + 2 > max_length:
+            chunks.append(current_chunk.strip())
+            current_chunk = paragraph
+        else:
+            if current_chunk:
+                current_chunk += "\n\n" + paragraph
+            else:
+                current_chunk = paragraph
+
+        # If a single paragraph is too long, split it further
+        while len(current_chunk) > max_length:
+            # Find a suitable split point within the current_chunk
+            # Try to split by newline first, then by sentence, then just by length
+            split_point = -1
+            # Look for last newline before max_length
+            if '\n' in current_chunk[:max_length]:
+                split_point = current_chunk.rfind('\n', 0, max_length)
+            # If no newline, look for last space
+            if split_point == -1 and ' ' in current_chunk[:max_length]:
+                split_point = current_chunk.rfind(' ', 0, max_length)
+            # If still no good split point, just cut at max_length
+            if split_point == -1:
+                split_point = max_length
+
+            chunks.append(current_chunk[:split_point].strip())
+            current_chunk = current_chunk[split_point:].strip()
+
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    return chunks
+
+
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handles any plain text message.
 
-    Step 4  — echoes the message back (proves transport layer works).
-    Step 17 — replace echo with: response = await ask(user.id, text)
+    Full flow (Steps 17 + 18):
+      1. Upsert user to DB
+      2. Save user message  (← BEFORE chain call, order matters for history!)
+      3. Show typing indicator
+      4. Call RAG chain: retrieve → history → LLM → response
+      5. Save assistant response
+      6. Send response to user
     """
     user = update.effective_user
     text = update.message.text
 
-    logger.info("User %s sent: %r", user.id, text[:80])  # log only first 80 chars
+    logger.info("User %s sent: %r", user.id, text[:80])
 
-    # ── Typing indicator — shows "FinAdvisor Bot is typing..." ──────────
+    # ── 1. Register user (no-op if already exists) ────────────────────────────
+    await crud.upsert_user(user.id, user.username, user.first_name)
+
+    # ── 2. Save user message BEFORE chain call (chronology!) ────────────────
+    await crud.save_message(user.id, "user", text)
+
+    # ── 3. Show "typing..." indicator ────────────────────────────────
     await context.bot.send_chat_action(
         chat_id=update.effective_chat.id,
         action="typing",
     )
 
-    # TODO (Step 17): replace the line below with the RAG chain call
-    echo_reply = f"🔁 *Ехо (тест):* {text}\n\n_RAG-ланцюжок буде підключено на Кроці 17_"
+    # ── 4. Run the RAG chain (may take 2–5 seconds) ──────────────────────
+    # ask() is synchronous internally (Groq httpx client).
+    # We wrap in asyncio.to_thread() so PTB's event loop stays free
+    # to process other users' messages while we wait for the LLM.
+    try:
+        response: str = await asyncio.to_thread(ask, user.id, text)
+    except Exception as e:
+        logger.error("Chain error for user %s: %s", user.id, e, exc_info=True)
+        await update.message.reply_text(
+            "⚠️ Не вдалось отримати відповідь. Спробуй ще раз через кілька секунд."
+        )
+        return
 
-    await update.message.reply_text(echo_reply, parse_mode=ParseMode.MARKDOWN)
+    # ── 5. Save assistant reply ───────────────────────────────────────────
+    await crud.save_message(user.id, "assistant", response)
+
+    # ── 6. Send response to user ───────────────────────────────────────
+    # Telegram has a 4096-char message limit. Split if needed.
+    if len(response) <= 4096:
+        await update.message.reply_text(response)
+    else:
+        # Split at paragraph boundary to avoid cutting mid-sentence
+        for chunk in _split_long_message(response):
+            await update.message.reply_text(chunk)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
