@@ -15,6 +15,7 @@ IMPORTANT: Every handler is an async function.
 """
 
 import logging
+import re
 
 from telegram import Update
 from telegram.constants import ParseMode
@@ -115,8 +116,37 @@ async def clear_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  Text message handler — Echo (temporary)
+#  Telegram Markdown helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
+def _sanitize_for_telegram(text: str) -> str:
+    """
+    Convert LLM output (CommonMark-ish) → Telegram Markdown v1.
+
+    Fixes applied in order:
+      1. **bold** → *bold*   (double star → single star)
+      2. ^* item  → • item   (leading asterisk bullets → bullet char)
+      3. ^- item  → • item   (leading dash bullets → bullet char)
+      4. ^# Title → *Title*  (# headers → just bold, no hash)
+      5. Collapse 3+ newlines → 2 (prevent excessive whitespace)
+    """
+    # 1. **double stars** → *single star* (must come BEFORE bullet fix)
+    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text, flags=re.DOTALL)
+
+    # 2. Leading `* ` bullets → `• `
+    text = re.sub(r'^\* ', '• ', text, flags=re.MULTILINE)
+
+    # 3. Leading `- ` bullets → `• ` (only when clearly a list item)
+    text = re.sub(r'^- (?=\S)', '• ', text, flags=re.MULTILINE)
+
+    # 4. Markdown headers `# Title` / `## Title` → `*Title*`
+    text = re.sub(r'^#{1,6}\s+(.+)$', r'*\1*', text, flags=re.MULTILINE)
+
+    # 5. Collapse 3+ consecutive blank lines to 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
+
 
 def _split_long_message(text: str, max_length: int = 4096) -> list[str]:
     """Splits a long text into chunks, trying to break at paragraph boundaries."""
@@ -204,14 +234,21 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # ── 5. Save assistant reply ───────────────────────────────────────────
     await crud.save_message(user.id, "assistant", response)
 
-    # ── 6. Send response to user ───────────────────────────────────────
-    # Telegram has a 4096-char message limit. Split if needed.
-    if len(response) <= 4096:
-        await update.message.reply_text(response)
+    # ── 6. Send response — sanitize then render Telegram Markdown ────────
+    formatted = _sanitize_for_telegram(response)
+
+    if len(formatted) <= 4096:
+        try:
+            await update.message.reply_text(formatted, parse_mode=ParseMode.MARKDOWN)
+        except Exception:
+            # Fallback: if Markdown parsing fails, send as plain text
+            await update.message.reply_text(response)
     else:
-        # Split at paragraph boundary to avoid cutting mid-sentence
-        for chunk in _split_long_message(response):
-            await update.message.reply_text(chunk)
+        for chunk in _split_long_message(formatted):
+            try:
+                await update.message.reply_text(chunk, parse_mode=ParseMode.MARKDOWN)
+            except Exception:
+                await update.message.reply_text(chunk)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
