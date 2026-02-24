@@ -27,6 +27,7 @@ Why not use LangChain ConversationChain?
   and multiple processes (e.g. scaling on Railway).
 """
 
+import asyncio
 import logging
 
 from langchain_core.messages import HumanMessage, AIMessage
@@ -119,15 +120,19 @@ async def ask(user_id: int, question: str) -> str:
         len(chunks),
     )
 
-    # ── 3. Invoke chain ────────────────────────────────────────────────
-    # _chain is synchronous (Groq client uses httpx under the hood).
-    # We call it directly — PTB's handler runs in a thread pool executor,
-    # so this won't block the event loop for other users.
-    response: str = _chain.invoke({
-        "context":  context,
-        "history":  history_messages,
-        "question": question,
-    })
+    # ── 3. Invoke chain ────────────────────────────────────────────────────
+    # _chain.invoke() calls the Groq HTTP API — it is SYNCHRONOUS (uses httpx
+    # in non-async mode). We run it in a thread pool so the asyncio event loop
+    # stays free to handle other users while we wait for the LLM response.
+    # ask() itself stays async so we can freely use `await` for DB calls above.
+    response: str = await asyncio.to_thread(
+        _chain.invoke,
+        {
+            "context":  context,
+            "history":  history_messages,
+            "question": question,
+        },
+    )
 
     logger.info("Chain response ready | user=%s | length=%d chars", user_id, len(response))
     return response

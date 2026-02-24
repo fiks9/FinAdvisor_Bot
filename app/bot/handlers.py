@@ -14,7 +14,6 @@ IMPORTANT: Every handler is an async function.
   Blocking calls will freeze the bot for ALL users simultaneously.
 """
 
-import asyncio
 import logging
 
 from telegram import Update
@@ -191,11 +190,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
 
     # ── 4. Run the RAG chain (may take 2–5 seconds) ──────────────────────
-    # ask() is synchronous internally (Groq httpx client).
-    # We wrap in asyncio.to_thread() so PTB's event loop stays free
-    # to process other users' messages while we wait for the LLM.
+    # ask() is async — it awaits DB calls + wraps the sync Groq call in
+    # asyncio.to_thread() internally. Just await it normally here.
     try:
-        response: str = await asyncio.to_thread(ask, user.id, text)
+        response: str = await ask(user.id, text)
     except Exception as e:
         logger.error("Chain error for user %s: %s", user.id, e, exc_info=True)
         await update.message.reply_text(
